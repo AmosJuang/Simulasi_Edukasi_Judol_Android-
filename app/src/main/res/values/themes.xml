@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.SimulasiJudolPAPB" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- OPTIONAL: warna -->
+        <item name="colorPrimary">@color/purple_500</item>
+        <item name="colorPrimaryVariant">@color/purple_700</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+    </style>
+
+</resources>

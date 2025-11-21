@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#1A1A1A"
+    android:padding="20dp">
+
+    <TextView
+        android:id="@+id/tvBalance"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Saldo: Rp 100.000"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:textColor="#4CAF50"
+        android:gravity="center"
+        android:layout_marginTop="20dp" />
+
+    <TextView
+        android:id="@+id/tvSpinCount"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Total Spin: 0"
+        android:textSize="16sp"
+        android:textColor="#FFFFFF"
+        android:gravity="center"
+        android:layout_marginTop="8dp" />
+
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        app:cardBackgroundColor="#2C2C2C"
+        app:cardCornerRadius="16dp"
+        app:cardElevation="8dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:padding="40dp">
+
+            <TextView
+                android:id="@+id/tvSlot1"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="🍒"
+                android:textSize="60sp"
+                android:gravity="center" />
+
+            <TextView
+                android:id="@+id/tvSlot2"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="🍋"
+                android:textSize="60sp"
+                android:gravity="center" />
+
+            <TextView
+                android:id="@+id/tvSlot3"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="🍊"
+                android:textSize="60sp"
+                android:gravity="center" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <TextView
+        android:id="@+id/tvStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Tekan tombol untuk mulai"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:textColor="#FF9800"
+        android:gravity="center"
+        android:layout_marginTop="24dp" />
+
+    <TextView
+        android:id="@+id/tvMessage"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textSize="14sp"
+        android:textColor="#CCCCCC"
+        android:gravity="center"
+        android:layout_marginTop="8dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="24dp"
+        android:padding="16dp"
+        android:background="@android:color/transparent">
+
+        <TextView
+            android:id="@+id/tvLossPercentage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Kerugian: 0%"
+            android:textSize="14sp"
+            android:textColor="#FF5252"
+            android:layout_marginBottom="8dp" />
+
+        <ProgressBar
+            android:id="@+id/progressLoss"
+            android:layout_width="match_parent"
+            android:layout_height="20dp"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:progressTint="#FF5252"
+            android:max="100"
+            android:progress="0" />
+    </LinearLayout>
+
+    <Space
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnSpin"
+        android:layout_width="match_parent"
+        android:layout_height="70dp"
+        android:text="🎰 SPIN (Rp 10.000)"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        app:cornerRadius="12dp"
+        app:backgroundTint="#FF5252"
+        android:layout_marginBottom="12dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnViewResult"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="Lihat Hasil Simulasi"
+        android:textSize="16sp"
+        app:cornerRadius="12dp"
+        app:backgroundTint="#9C27B0" />
+
+</LinearLayout>

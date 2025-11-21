@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "123456789000",
+    "project_id": "simulasi-judi-papb-dev",
+    "storage_bucket": "simulasi-judi-papb-dev.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:123456789000:android:abcdef1234567890abcdef",
+        "android_client_info": {
+          "package_name": "com.example.simulasijudolpapb"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "123456789000-abcdefghijklmnopqrstuvwxyz123456.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.simulasijudolpapb",
+            "certificate_hash": "abcdefghijklmnopqrstuvwxyz1234567890abcdef"
+          }
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDummyKeyForDevelopmentOnly123456789"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
+
