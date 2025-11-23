@@ -1,110 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#1A1A1A">
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:gravity="center">
 
-    <LinearLayout
+    <TextView
+        android:id="@+id/tvTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="🚫 ANTI-JUDI SIMULATOR"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:textColor="#D32F2F"
+        android:layout_marginBottom="24dp"/>
+
+    <Button
+        android:id="@+id/btnStartSimulation"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="24dp"
-        android:gravity="center_horizontal">
+        android:text="Mulai Simulasi"
+        android:layout_marginBottom="12dp"/>
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="🚫 ANTI-JUDI SIMULATOR"
-            android:textSize="28sp"
-            android:textStyle="bold"
-            android:textColor="#FF5252"
-            android:layout_marginTop="40dp"
-            android:layout_marginBottom="16dp" />
+    <Button
+        android:id="@+id/btnCameraEducation"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Gunakan Kamera Edukasi"
+        android:layout_marginBottom="12dp"/>
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Aplikasi Edukasi Bahaya Perjudian"
-            android:textSize="14sp"
-            android:textColor="#FFFFFF"
-            android:layout_marginBottom="40dp" />
+    <Button
+        android:id="@+id/btnEducation"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Edukasi Bahaya Judi"
+        android:layout_marginBottom="12dp"/>
 
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="#2C2C2C"
-            app:cardCornerRadius="12dp"
-            app:cardElevation="4dp">
+    <Button
+        android:id="@+id/btnAnalytics"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Analisis Kerugian"
+        android:layout_marginBottom="12dp"/>
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="20dp">
+</LinearLayout>
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="📊 SDG Terkait"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textColor="#4CAF50"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="✔ SDG 3.5 — Pencegahan adiksi berbahaya\n✔ SDG 4.7 — Edukasi pembangunan berkelanjutan"
-                    android:textSize="13sp"
-                    android:textColor="#CCCCCC" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnStartSimulation"
-            android:layout_width="match_parent"
-            android:layout_height="65dp"
-            android:text="🎰 Mulai Simulasi Judi"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            app:cornerRadius="12dp"
-            app:backgroundTint="#FF5252"
-            android:layout_marginBottom="12dp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnCameraEducation"
-            android:layout_width="match_parent"
-            android:layout_height="65dp"
-            android:text="📸 Edukasi dengan Kamera"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            app:cornerRadius="12dp"
-            app:backgroundTint="#FF9800"
-            android:layout_marginBottom="12dp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnEducation"
-            android:layout_width="match_parent"
-            android:layout_height="65dp"
-            android:text="📚 Modul Edukasi"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            app:cornerRadius="12dp"
-            app:backgroundTint="#2196F3"
-            android:layout_marginBottom="12dp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnAnalytics"
-            android:layout_width="match_parent"
-            android:layout_height="65dp"
-            android:text="📉 Analisis Kerugian"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            app:cornerRadius="12dp"
-            app:backgroundTint="#9C27B0"
-            android:layout_marginBottom="12dp" />
-
-    </LinearLayout>
-</ScrollView>

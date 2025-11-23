@@ -1,11 +1,14 @@
 package com.example.simulasijudolpapb
 
+import android.Manifest
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -19,6 +22,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -27,13 +31,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import com.example.simulasijudolpapb.databinding.ActivityMainBinding
-import com.example.simulasijudolpapb.utils.LocationManager
-import kotlinx.coroutines.launch
+import com.google.android.gms.location.LocationServices
+import com.example.simulasijudolpapb.utils.LocationManager as AppLocationManager
 import java.util.Locale
-import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.sqrt
 import kotlin.random.Random
@@ -42,8 +42,7 @@ import kotlin.random.Random
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.auth.ktx.auth
-
-// Replaced content with full Compose + ViewModels to implement Anti-Judi Simulator app.
+import kotlinx.coroutines.launch
 
 sealed class Screen {
     object Home : Screen()
@@ -69,26 +68,49 @@ class SimulatorViewModel : ViewModel() {
     var balance by mutableStateOf(initialBalance)
         private set
 
-    var houseEdge by mutableStateOf(0.12) // 12% house edge
-    var baseWinProb by mutableStateOf(0.15) // base chance to win
+    var houseEdge by mutableStateOf(0.12)
+    var baseWinProb by mutableStateOf(0.15)
     private var spinCounter = 0
 
     var history = mutableStateListOf<SpinResult>()
         private set
 
-    // Firestore instance
+    // Store the actual symbols displayed
+    var currentSymbols by mutableStateOf(listOf(0, 0, 0))
+        private set
+
     private val firestore = Firebase.firestore
 
-    // Simulate manipulation: after small runs, reduce win prob slightly to enforce long-term loss
     fun spin(bet: Int = 10) {
         spinCounter++
-        val manipulatedEdge = houseEdge + (spinCounter / 50) * 0.01 // slowly increase edge
+        val manipulatedEdge = houseEdge + (spinCounter / 50) * 0.01
         val dynamicWinProb = baseWinProb * (1.0 - manipulatedEdge)
         val r = Random.nextDouble()
-        val nearMiss = abs(r - dynamicWinProb) < 0.03 && r > dynamicWinProb // near-miss if just above win threshold
-        val isWin = r < dynamicWinProb || (r < dynamicWinProb + 0.02 && Random.nextDouble() < 0.02) // occasional intermittent reward
-        val winAmount = if (isWin) (bet * (1 + (Random.nextDouble() * 3))).toInt() else 0 // small wins
+
+        // Generate 3 random symbols (0, 1, 2)
+        val symbols = List(3) { Random.nextInt(3) }
+        currentSymbols = symbols
+
+        // Win ONLY if all 3 symbols are the same
+        val isWin = symbols[0] == symbols[1] && symbols[1] == symbols[2]
+
+        // Near miss: two symbols match but not all three
+        val nearMiss = !isWin && (
+            (symbols[0] == symbols[1]) ||
+            (symbols[1] == symbols[2]) ||
+            (symbols[0] == symbols[2])
+        )
+
+        // Win amount calculation - only if isWin is true
+        val winAmount = if (isWin) {
+            // Higher multiplier for winning (2x to 5x)
+            (bet * (2 + (Random.nextDouble() * 3))).toInt()
+        } else {
+            0
+        }
+
         balance = balance - bet + winAmount
+
         val spinResult = SpinResult(
             id = spinCounter,
             bet = bet,
@@ -99,9 +121,9 @@ class SimulatorViewModel : ViewModel() {
         )
         history.add(spinResult)
 
-        // Persist a simple record to Firestore (collection: "spins") including anonymous uid
+        // Save to Firebase Firestore
         try {
-            val uid = Firebase.auth.currentUser?.uid ?: "anon"
+            val uid = Firebase.auth.currentUser?.uid ?: "anonymous"
             val doc = hashMapOf<String, Any>(
                 "id" to spinResult.id,
                 "bet" to spinResult.bet,
@@ -109,17 +131,19 @@ class SimulatorViewModel : ViewModel() {
                 "isWin" to spinResult.isWin,
                 "nearMiss" to spinResult.nearMiss,
                 "timestamp" to spinResult.timestamp,
-                "deviceId" to uid
+                "deviceId" to uid,
+                "symbols" to symbols,
+                "balance" to balance
             )
             firestore.collection("spins").add(doc)
                 .addOnSuccessListener {
-                    // success - optional logging
+                    // Successfully saved to Firestore
                 }
-                .addOnFailureListener {
-                    // failure - ignore for offline/absence of config
+                .addOnFailureListener { e ->
+                    // Log error if needed
                 }
-        } catch (e: Exception) {
-            // ignore: keep UI resilient
+        } catch (_: Exception) {
+            // Handle exception silently
         }
     }
 
@@ -146,7 +170,6 @@ class CameraViewModel : ViewModel() {
 }
 
 class LocationViewModel : ViewModel() {
-    // Dummy risk zones (lat, lon, name)
     val riskZones = listOf(
         Triple(-6.200000, 106.816666, "Pusat Hiburan Malam A"),
         Triple(-6.21, 106.82, "Game Center B"),
@@ -155,7 +178,6 @@ class LocationViewModel : ViewModel() {
 
     fun isNearRiskZone(lat: Double, lon: Double, thresholdMeters: Double = 200.0): String? {
         for ((zlat, zlon, name) in riskZones) {
-            // Simple distance check (not haversine, approximate)
             val dLat = (zlat - lat) * 111000.0
             val dLon = (zlon - lon) * 111000.0
             val dist = sqrt(dLat * dLat + dLon * dLon)
@@ -165,60 +187,16 @@ class LocationViewModel : ViewModel() {
     }
 }
 
-class MainActivity : AppCompatActivity() {
-
-    private lateinit var binding: ActivityMainBinding
-    private lateinit var locationManager: LocationManager
-
+class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        locationManager = LocationManager(this)
-
-        setupClickListeners()
-        // Langsung check dummy location tanpa permission
-        checkRiskZone()
-    }
-
-    private fun setupClickListeners() {
-        binding.btnStartSimulation.setOnClickListener {
-            startActivity(Intent(this, SimulatorActivity::class.java))
-        }
-
-        binding.btnCameraEducation.setOnClickListener {
-            startActivity(Intent(this, CameraEducationActivity::class.java))
-        }
-
-        binding.btnEducation.setOnClickListener {
-            startActivity(Intent(this, EducationActivity::class.java))
-        }
-
-        binding.btnAnalytics.setOnClickListener {
-            startActivity(Intent(this, LossAnalyticsActivity::class.java))
-        }
-    }
-
-    private fun checkRiskZone() {
-        // Menggunakan dummy data dari LocationManager
-        locationManager.checkRiskZone { warning ->
-            warning?.let {
-                showRiskZoneWarning(it)
+        setContent {
+            MaterialTheme {
+                Surface {
+                    AppRoot()
+                }
             }
         }
-    }
-
-    private fun showRiskZoneWarning(message: String) {
-        AlertDialog.Builder(this)
-            .setTitle("⚠️ Zona Risiko Terdeteksi")
-            .setMessage(message)
-            .setPositiveButton("Saya Mengerti", null)
-            .setNeutralButton("Cek Lagi") { _, _ ->
-                // Check lagi untuk simulasi lokasi berbeda
-                checkRiskZone()
-            }
-            .show()
     }
 }
 
@@ -261,10 +239,49 @@ fun AppRoot() {
 
 @Composable
 fun HomeScreen(onNavigate: (Screen) -> Unit) {
+    val context = LocalContext.current
+    val locationVM: LocationViewModel = viewModel()
+    val appLoc = remember { AppLocationManager(context) }
+    val fused = LocationServices.getFusedLocationProviderClient(context)
+
+    var showDialog by remember { mutableStateOf(false) }
+    var dialogTitle by remember { mutableStateOf("") }
+    var dialogMessage by remember { mutableStateOf("") }
+
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted: Boolean ->
+        if (granted) {
+            try {
+                fused.lastLocation.addOnSuccessListener { loc ->
+                    if (loc != null) {
+                        val lat = loc.latitude
+                        val lon = loc.longitude
+                        val zone = locationVM.isNearRiskZone(lat, lon)
+                        appLoc.checkProvinceRisk(lat, lon) { prov: String?, isRisk: Boolean ->
+                            val provName = prov ?: "Tidak diketahui"
+                            val provStatus = if (isRisk) "ZONA RISIKO" else "AMAN (NON-RISK)"
+                            val zoneText = zone?.let { "Nearby fixed zone: $it\n" } ?: "No nearby fixed zone.\n"
+                            dialogTitle = "Hasil Pemeriksaan Lokasi"
+                            dialogMessage = "Provinsi: $provName\nStatus provinsi: $provStatus\n\n$zoneText Lat: ${"%.5f".format(lat)}, Lon: ${"%.5f".format(lon)}"
+                            showDialog = true
+                        }
+                    } else {
+                        Toast.makeText(context, "Lokasi tidak tersedia. Pastikan GPS aktif.", Toast.LENGTH_LONG).show()
+                    }
+                }.addOnFailureListener {
+                    Toast.makeText(context, "Gagal mengambil lokasi: ${it.message}", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: SecurityException) {
+                Toast.makeText(context, "Izin lokasi ditolak.", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "Izin lokasi ditolak.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF3F4F6)) // Latar belakang abu-abu terang
+            .background(Color(0xFFF3F4F6))
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -272,38 +289,57 @@ fun HomeScreen(onNavigate: (Screen) -> Unit) {
             "🚫 ANTI-JUDI SIMULATOR",
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
-            color = Color(0xFFD32F2F), // Warna merah untuk judul
+            color = Color(0xFFD32F2F),
             modifier = Modifier.align(Alignment.CenterHorizontally)
         )
-        Spacer(modifier = Modifier.height(16.dp))
+
         Button(
             onClick = { onNavigate(Screen.Simulator) },
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)) // Hijau
-        ) {
-            Text("Mulai Simulasi", color = Color.White)
-        }
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+        ) { Text("Mulai Simulasi", color = Color.White) }
+
         Button(
             onClick = { onNavigate(Screen.Camera) },
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3)) // Biru
-        ) {
-            Text("Gunakan Kamera Edukasi", color = Color.White)
-        }
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
+        ) { Text("Gunakan Kamera Edukasi", color = Color.White) }
+
         Button(
             onClick = { onNavigate(Screen.Education) },
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFC107)) // Kuning
-        ) {
-            Text("Edukasi Bahaya Judi", color = Color.Black)
-        }
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFC107))
+        ) { Text("Edukasi Bahaya Judi", color = Color.Black) }
+
         Button(
             onClick = { onNavigate(Screen.Analytics) },
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9C27B0)) // Ungu
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9C27B0))
+        ) { Text("Analisis Kerugian", color = Color.White) }
+
+        Button(
+            onClick = {
+                permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0288D1))
         ) {
-            Text("Analisis Kerugian", color = Color.White)
+            Text("📍 Check Risk Zone Lokasi Saya", color = Color.White)
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("Tekan tombol di atas untuk memeriksa zona risiko berdasarkan lokasi Anda.", fontSize = 12.sp)
+    }
+
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text(dialogTitle) },
+            text = { Text(dialogMessage) },
+            confirmButton = {
+                TextButton(onClick = { showDialog = false }) { Text("OK") }
+            }
+        )
     }
 }
 
@@ -315,7 +351,15 @@ fun SimulatorScreen(vm: SimulatorViewModel, onBack: () -> Unit, onShowResult: ()
 
     var isSpinning by remember { mutableStateOf(false) }
     val slotSymbols = remember { listOf("🍒", "🍋", "🔔") }
-    var currentSymbols by remember { mutableStateOf(listOf("🍒", "🍒", "🍒")) }
+    var displaySymbols by remember { mutableStateOf(listOf("🍒", "🍒", "🍒")) }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Update display symbols when VM symbols change
+    LaunchedEffect(vm.currentSymbols) {
+        if (!isSpinning) {
+            displaySymbols = vm.currentSymbols.map { slotSymbols[it] }
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
@@ -330,14 +374,17 @@ fun SimulatorScreen(vm: SimulatorViewModel, onBack: () -> Unit, onShowResult: ()
             Button(onClick = {
                 if (!isSpinning) {
                     isSpinning = true
-                    // Animasi slot machine
-                    kotlinx.coroutines.GlobalScope.launch {
+                    coroutineScope.launch {
+                        // Animation phase
                         repeat(15) {
-                            currentSymbols = List(3) { slotSymbols.random() }
+                            displaySymbols = List(3) { slotSymbols.random() }
                             kotlinx.coroutines.delay(100)
                         }
-                        isSpinning = false
+                        // Actual spin
                         vm.spin(10)
+                        // Show final result
+                        displaySymbols = vm.currentSymbols.map { slotSymbols[it] }
+                        isSpinning = false
                     }
                 }
             }) { Text("Spin (Bet 10)") }
@@ -345,14 +392,17 @@ fun SimulatorScreen(vm: SimulatorViewModel, onBack: () -> Unit, onShowResult: ()
             Button(onClick = {
                 if (!isSpinning) {
                     isSpinning = true
-                    // Animasi slot machine
-                    kotlinx.coroutines.GlobalScope.launch {
+                    coroutineScope.launch {
+                        // Animation phase
                         repeat(15) {
-                            currentSymbols = List(3) { slotSymbols.random() }
+                            displaySymbols = List(3) { slotSymbols.random() }
                             kotlinx.coroutines.delay(100)
                         }
-                        isSpinning = false
+                        // Actual spin
                         vm.spin(50)
+                        // Show final result
+                        displaySymbols = vm.currentSymbols.map { slotSymbols[it] }
+                        isSpinning = false
                     }
                 }
             }) { Text("Spin (Bet 50)") }
@@ -362,12 +412,26 @@ fun SimulatorScreen(vm: SimulatorViewModel, onBack: () -> Unit, onShowResult: ()
             Button(onClick = onShowResult) { Text("Hasil Edukasi") }
         }
 
-        // Slot machine display
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            currentSymbols.forEach { symbol ->
-                Text(symbol, fontSize = 32.sp, modifier = Modifier.padding(horizontal = 8.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(120.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Row(horizontalArrangement = Arrangement.Center) {
+                displaySymbols.forEach { symbol ->
+                    Text(
+                        text = symbol,
+                        fontSize = 64.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
             }
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         Text("Riwayat terbaru:", fontWeight = FontWeight.Medium)
         if (history.isEmpty()) {
@@ -380,13 +444,13 @@ fun SimulatorScreen(vm: SimulatorViewModel, onBack: () -> Unit, onShowResult: ()
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Spin #${s.id} • Bet ${s.bet} • Win ${s.win}")
                                 if (s.nearMiss) {
-                                    Text("Near-miss: mendekati kemenangan", color = Color(0xFFF57C00))
+                                    Text("⚠️ Near-miss: 2 simbol sama!", color = Color(0xFFF57C00))
                                 }
                                 if (s.isWin) {
-                                    Text("Menang! (Intermittent reward)", color = Color(0xFF2E7D32))
+                                    Text("🎉 MENANG! 3 simbol sama!", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
                                 }
                             }
-                            Text(if (s.isWin) "+${s.win}" else "-${s.bet}", fontWeight = FontWeight.Bold)
+                            Text(if (s.isWin) "+${s.win}" else "-${s.bet}", fontWeight = FontWeight.Bold, color = if (s.isWin) Color(0xFF2E7D32) else Color(0xFFD32F2F))
                         }
                     }
                 }
@@ -445,9 +509,10 @@ fun LocationScreen(vm: LocationViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
     var locationText by remember { mutableStateOf<String?>("Klik 'Ambil Lokasi Dummy' untuk mengecek zona risiko.") }
     var showRisk by remember { mutableStateOf<String?>(null) }
+    var provinceName by remember { mutableStateOf<String?>(null) }
+    var isProvinceRisk by remember { mutableStateOf<Boolean?>(null) }
 
-    // Dummy location manager
-    val dummyLocationManager = remember { LocationManager(context) }
+    val dummyLocationManager: AppLocationManager = remember { AppLocationManager(context) }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
@@ -464,21 +529,24 @@ fun LocationScreen(vm: LocationViewModel, onBack: () -> Unit) {
         
         Text(locationText ?: "")
         
-        Button(onClick = { 
-            // Ambil dummy location
+        Button(onClick = {
             val dummyLoc = dummyLocationManager.getDummyLocation()
             locationText = "Lokasi Dummy:\nLat: ${String.format(Locale.getDefault(), "%.4f", dummyLoc.first)}, Lon: ${String.format(Locale.getDefault(), "%.4f", dummyLoc.second)}"
 
-            // Check risk zone
             val zone = vm.isNearRiskZone(dummyLoc.first, dummyLoc.second)
             showRisk = zone
+
+            dummyLocationManager.checkProvinceRisk(dummyLoc.first, dummyLoc.second) { prov: String?, risk: Boolean ->
+                provinceName = prov
+                isProvinceRisk = risk
+            }
         }) {
-            Text("🎲 Ambil Lokasi Dummy")
+            Text("🎲 Ambil Lokasi Dummy & Cek Provinsi")
         }
         
         if (showRisk != null) {
             Card(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp), 
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE))
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
@@ -498,8 +566,42 @@ fun LocationScreen(vm: LocationViewModel, onBack: () -> Unit) {
             }
         }
         
-        Spacer(modifier = Modifier.height(16.dp))
-        
+        Spacer(modifier = Modifier.height(8.dp))
+
+        when (isProvinceRisk) {
+            true -> Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE))) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("⚠️ PROVINSI: ${provinceName ?: "Tidak diketahui"}", color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold)
+                    Text("Berdasarkan data provinsi tetap aplikasi, provinsi ini DINYATAKAN SEBAGAI ZONA RISIKO.")
+                }
+            }
+            false -> Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("✅ PROVINSI: ${provinceName ?: "Tidak diketahui"}", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                    Text("Berdasarkan data provinsi tetap aplikasi, provinsi ini DINYATAKAN AMAN (non-risk).")
+                }
+            }
+            null -> { }
+        }
+
+        if (provinceName != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = {
+                val status = if (isProvinceRisk == true) "ZONA RISIKO" else "AMAN (NON-RISK)"
+                val text = "Lokasi saya berada di provinsi: ${provinceName}\nStatus: $status"
+                val send = Intent().apply {
+                    action = Intent.ACTION_SEND
+                    putExtra(Intent.EXTRA_TEXT, text)
+                    type = "text/plain"
+                }
+                context.startActivity(Intent.createChooser(send, "Bagikan status provinsi"))
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text("📤 Bagikan Status Provinsi")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("📍 Zona Risiko Terdaftar:", fontWeight = FontWeight.Bold)
@@ -518,7 +620,6 @@ fun LocationScreen(vm: LocationViewModel, onBack: () -> Unit) {
 fun AnalyticsScreen(vm: SimulatorViewModel, onBack: () -> Unit) {
     val history = vm.history
     val points = remember(history) {
-        // Build cumulative loss series
         var cum = 0
         history.map {
             cum += (it.bet - it.win)
@@ -527,6 +628,7 @@ fun AnalyticsScreen(vm: SimulatorViewModel, onBack: () -> Unit) {
     }
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+
             Text("Analisis Kerugian", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             TextButton(onClick = onBack) { Text("Kembali") }
         }
@@ -537,7 +639,6 @@ fun AnalyticsScreen(vm: SimulatorViewModel, onBack: () -> Unit) {
                 .fillMaxWidth()
                 .height(220.dp)
                 .padding(8.dp)) {
-                // Simple line chart
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
                     val h = size.height
@@ -552,8 +653,8 @@ fun AnalyticsScreen(vm: SimulatorViewModel, onBack: () -> Unit) {
                         val y = if (range == 0f) h / 2f else (h - ((points[i] - minVal) / range) * h)
                         drawLine(
                             color = Color.Red, 
-                            start = androidx.compose.ui.geometry.Offset(prevX, prevY), 
-                            end = androidx.compose.ui.geometry.Offset(x, y), 
+                            start = Offset(prevX, prevY),
+                            end = Offset(x, y),
                             strokeWidth = 3f
                         )
                         prevX = x
