@@ -1,5 +1,6 @@
 package com.example.simulasijudolpapb
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -14,7 +15,17 @@ class LossAnalyticsActivity : ComponentActivity() {
             MaterialTheme {
                 Surface {
                     val simulatorVM: SimulatorViewModel = viewModel()
-                    AnalyticsScreen(simulatorVM) { finish() }
+                    ResultScreen(
+                        vm = simulatorVM,
+                        onBack = { finish() }
+                    ) { text ->
+                        val send = Intent().apply {
+                            action = Intent.ACTION_SEND
+                            putExtra(Intent.EXTRA_TEXT, text)
+                            type = "text/plain"
+                        }
+                        startActivity(Intent.createChooser(send, "Share anti-judi"))
+                    }
                 }
             }
         }
