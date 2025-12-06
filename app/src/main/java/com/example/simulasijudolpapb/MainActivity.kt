@@ -3,6 +3,8 @@ package com.example.simulasijudolpapb
 import android.Manifest
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -26,9 +28,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.android.gms.location.LocationServices
@@ -47,6 +51,23 @@ import com.google.firebase.ktx.Firebase
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.auth.ktx.auth
 import kotlinx.coroutines.launch
+
+import android.graphics.Rect
+import java.io.File
+
+// CameraX imports
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import java.util.concurrent.Executors
+import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
+import androidx.compose.ui.input.pointer.pointerInput
 
 sealed class Screen {
     object Home : Screen()
@@ -87,8 +108,6 @@ class SimulatorViewModel : ViewModel() {
     fun spin(bet: Int = 10) {
         spinCounter++
         val manipulatedEdge = houseEdge + (spinCounter / 50) * 0.01
-        val dynamicWinProb = baseWinProb * (1.0 - manipulatedEdge)
-        val r = Random.nextDouble()
 
         // Generate 3 random symbols (0, 1, 2)
         val symbols = List(3) { Random.nextInt(3) }
@@ -167,8 +186,21 @@ class CameraViewModel : ViewModel() {
     var lastPhoto by mutableStateOf<Bitmap?>(null)
         private set
 
+    // New: store composited photo (selfie + twibbon)
+    var lastComposite by mutableStateOf<Bitmap?>(null)
+        private set
+
     fun setPhoto(bmp: Bitmap?) {
         lastPhoto = bmp
+    }
+
+    fun setComposite(bmp: Bitmap?) {
+        lastComposite = bmp
+    }
+
+    fun clear() {
+        lastPhoto = null
+        lastComposite = null
     }
 }
 
@@ -470,26 +502,47 @@ fun SimulatorScreen(vm: SimulatorViewModel, onBack: () -> Unit, onShowResult: ()
 @Composable
 fun CameraScreen(vm: CameraViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
-    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val executor = remember { Executors.newSingleThreadExecutor() }
 
-    // Check if device has any camera available
-    val packageManager = context.packageManager
-    val cameraSupported = remember { packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_ANY) }
+    var lastBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var debugMessage by remember { mutableStateOf("") }
+    var overlayBmp by remember { mutableStateOf<Bitmap?>(null) }
+    var overlayBmpWithHole by remember { mutableStateOf<Bitmap?>(null) }
+    var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
 
-    // Launcher that actually takes a small preview bitmap
-    val previewLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bmp: Bitmap? ->
-        if (bmp != null) {
-            bitmap = bmp
-            vm.setPhoto(bmp)
-        } else {
-            Toast.makeText(context, "Foto dibatalkan", Toast.LENGTH_SHORT).show()
+    // Load overlay from drawable once
+    LaunchedEffect(Unit) {
+        try {
+            val resId = context.resources.getIdentifier("anti_judi_online", "drawable", context.packageName)
+            if (resId != 0) {
+                val bmp = BitmapFactory.decodeResource(context.resources, resId)
+                // Store original overlay WITHOUT hole for final composite
+                overlayBmp = bmp
+                // Create overlay WITH hole for live preview
+                try {
+                    overlayBmpWithHole = makeOverlayWithHole(bmp)
+                } catch (_: Exception) {
+                    overlayBmpWithHole = bmp
+                }
+                debugMessage = "✅ Twibbon loaded from drawable"
+            } else {
+                debugMessage = "⚠️ Twibbon resource not found: anti_judi_online"
+            }
+        } catch (e: Exception) {
+            debugMessage = "❌ Error loading twibbon: ${e.message}"
         }
     }
 
-    // Runtime permission launcher for CAMERA
+    // Clean up executor when leaving
+    DisposableEffect(Unit) {
+        onDispose { executor.shutdown() }
+    }
+
+    // Permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted: Boolean ->
         if (granted) {
-            previewLauncher.launch(null)
+            debugMessage = "Camera permission granted"
         } else {
             Toast.makeText(context, "Izin kamera ditolak.", Toast.LENGTH_SHORT).show()
         }
@@ -505,46 +558,222 @@ fun CameraScreen(vm: CameraViewModel, onBack: () -> Unit) {
             Text("Kamera Edukasi", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             TextButton(onClick = onBack) { Text("Kembali") }
         }
-        Text("Ambil foto barang berharga yang bisa hilang jika kecanduan judi (HP, motor, laptop).")
 
-        Button(onClick = {
-            if (!cameraSupported) {
-                Toast.makeText(context, "Perangkat tidak memiliki kamera.", Toast.LENGTH_SHORT).show()
-                return@Button
-            }
-            val hasPermission = context.checkSelfPermission(Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            if (hasPermission) {
-                previewLauncher.launch(null)
-            } else {
-                // Ask for permission, will launch camera on grant
-                permissionLauncher.launch(Manifest.permission.CAMERA)
-            }
-        }) { Text("Ambil Foto") }
+        Text("Ambil foto selfie dengan twibbon anti-judi online. Twibbon akan terlihat di layar saat preview (sebagai overlay).", fontSize = 14.sp)
 
         Spacer(modifier = Modifier.height(8.dp))
-        if (bitmap != null) {
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.TopStart) {
-                Image(bitmap = bitmap!!.asImageBitmap(), contentDescription = "Foto", modifier = Modifier
-                    .fillMaxWidth()
-                    .height(320.dp))
-                Surface(
-                    color = Color(0x99000000),
+
+        // Preview area (CameraX PreviewView inside AndroidView)
+        Box(modifier = Modifier
+            .fillMaxWidth()
+            .height(420.dp), contentAlignment = Alignment.Center) {
+
+            AndroidView(factory = { ctx ->
+                val previewView = PreviewView(ctx).also { it.scaleType = PreviewView.ScaleType.FILL_CENTER }
+                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                cameraProviderFuture.addListener({
+                    try {
+                        val cameraProvider = cameraProviderFuture.get()
+                        val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+                        val ic = ImageCapture.Builder()
+                            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                            .build()
+
+                        imageCapture = ic
+
+                        val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+                        cameraProvider.unbindAll()
+                        cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, ic)
+                        debugMessage = "Camera ready"
+                    } catch (e: Exception) {
+                        debugMessage = "Camera bind failed: ${e.message}"
+                    }
+                }, ContextCompat.getMainExecutor(ctx))
+                previewView
+            }, modifier = Modifier.fillMaxSize())
+
+            // Overlay twibbon composable on top of preview (centered) - use version WITH hole
+            if (overlayBmpWithHole != null) {
+                // Scale overlay to fit width while preserving aspect ratio
+                val overlayImage = overlayBmpWithHole!!
+                Image(
+                    bitmap = overlayImage.asImageBitmap(),
+                    contentDescription = "Twibbon overlay",
                     modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(12.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                ) {
-                    Text(
-                        "Ini salah satu barang yang sering dijual korban judi.",
-                        color = Color.White,
-                        modifier = Modifier.padding(8.dp)
-                    )
+                        .fillMaxWidth(0.9f)
+                        .aspectRatio(overlayImage.width.toFloat() / overlayImage.height.toFloat())
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Debug card
+        if (debugMessage.isNotEmpty()) {
+            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = if (debugMessage.startsWith("✅")) Color(0xFFE8F5E9) else Color(0xFFFFF3E0))) {
+                Text(debugMessage, modifier = Modifier.padding(12.dp), fontSize = 12.sp, color = if (debugMessage.startsWith("✅")) Color(0xFF2E7D32) else Color(0xFFE65100))
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = {
+                // Request permission if not granted
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                    permissionLauncher.launch(Manifest.permission.CAMERA)
+                    return@Button
+                }
+
+                val ic = imageCapture
+                if (ic == null) {
+                    Toast.makeText(context, "Camera not ready", Toast.LENGTH_SHORT).show()
+                    return@Button
+                }
+
+                // Capture to temp file in cache
+                try {
+                    val file = File(context.cacheDir, "capture_${System.currentTimeMillis()}.jpg")
+                    val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
+                    ic.takePicture(outputOptions, executor, object : ImageCapture.OnImageSavedCallback {
+                        override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                            val photoBmp = BitmapFactory.decodeFile(file.absolutePath)
+                            if (photoBmp != null && overlayBmp != null) {
+                                // Composite overlay centered and scaled to photo - use original overlay WITHOUT hole
+                                val combined = compositeBitmap(photoBmp, overlayBmp!!)
+                                Handler(Looper.getMainLooper()).post {
+                                    vm.setPhoto(photoBmp)
+                                    vm.setComposite(combined)
+                                    lastBitmap = combined
+                                    debugMessage = "✅ Photo captured + twibbon applied"
+                                    Toast.makeText(context, "Foto disimpan & twibbon diterapkan", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                Handler(Looper.getMainLooper()).post {
+                                    vm.setPhoto(photoBmp)
+                                    vm.setComposite(null)
+                                    lastBitmap = photoBmp
+                                    debugMessage = "📸 Photo captured (no overlay)"
+                                }
+                            }
+                        }
+
+                        override fun onError(exception: ImageCaptureException) {
+                            Handler(Looper.getMainLooper()).post {
+                                debugMessage = "❌ Capture failed: ${exception.message}"
+                                Toast.makeText(context, "Gagal ambil foto: ${exception.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    })
+                } catch (e: Exception) {
+                    debugMessage = "❌ Error while capturing: ${e.message}"
+                }
+
+            }, modifier = Modifier.weight(1f)) {
+                Text("📸 Ambil Foto")
+            }
+
+            Button(onClick = {
+                vm.clear()
+                lastBitmap = null
+                debugMessage = ""
+            }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))) {
+                Text("🗑️ Hapus")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (lastBitmap != null) {
+            Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)) {
+                Box {
+                    Image(bitmap = lastBitmap!!.asImageBitmap(), contentDescription = "Foto dengan Twibbon", modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp))
+                    Surface(color = Color(0xCC000000), modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).clip(RoundedCornerShape(8.dp))) {
+                        Text(if (vm.lastComposite != null) "✅ Twibbon Applied" else "⚠️ No Twibbon", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(8.dp))
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = {
+                    // Simple share text; image sharing requires file provider - omitted for brevity
+                    val shareText = "Saya mendukung kampanye Anti-Judi Online! 🚫\n\n#AntiJudiOnline #StopJudiOnline #PAPB2025"
+                    val intent = Intent().apply {
+                        action = Intent.ACTION_SEND
+                        putExtra(Intent.EXTRA_TEXT, shareText)
+                        type = "text/plain"
+                    }
+                    context.startActivity(Intent.createChooser(intent, "Share kampanye anti-judi"))
+                }, modifier = Modifier.weight(1f)) {
+                    Text("📤 Share")
+                }
+
+                Button(onClick = {
+                    vm.clear()
+                    lastBitmap = null
+                    debugMessage = ""
+                }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))) {
+                    Text("🗑️ Hapus")
                 }
             }
         } else {
-            Text("Belum ada foto.")
+            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5))) {
+                Column(modifier = Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("📷", fontSize = 64.sp)
+                    Text("Belum ada foto", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF757575))
+                    Text("Tekan tombol Ambil Foto untuk menangkap selfie dengan twibbon", fontSize = 12.sp, color = Color(0xFF9E9E9E), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                }
+            }
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
     }
+}
+
+// Helper: composite overlay centered and scaled onto photo
+// The overlay WITH HOLE will show the selfie photo through the transparent center
+fun compositeBitmap(photo: Bitmap, overlay: Bitmap): Bitmap {
+    // Create overlay with hole to replace the center image with selfie
+    val overlayWithHole = makeOverlayWithHole(overlay)
+
+    val combined = Bitmap.createBitmap(photo.width, photo.height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(combined)
+
+    // Draw selfie photo first (background - will show through the hole)
+    canvas.drawBitmap(photo, 0f, 0f, null)
+
+    // Scale overlay WITH HOLE to fit within photo (90% of width)
+    val scale = min(photo.width.toFloat() * 0.9f / overlayWithHole.width.toFloat(), photo.height.toFloat() * 0.9f / overlayWithHole.height.toFloat())
+    val newW = (overlayWithHole.width * scale).toInt().coerceAtLeast(1)
+    val newH = (overlayWithHole.height * scale).toInt().coerceAtLeast(1)
+    val overlayScaled = Bitmap.createScaledBitmap(overlayWithHole, newW, newH, true)
+
+    // Draw overlay with hole on top (centered) - selfie shows through the hole
+    val left = (photo.width - overlayScaled.width) / 2f
+    val top = (photo.height - overlayScaled.height) / 2f
+    canvas.drawBitmap(overlayScaled, left, top, null)
+
+    return combined
+}
+
+// New helper: return overlay bitmap with transparent circular hole at center
+fun makeOverlayWithHole(src: Bitmap): Bitmap {
+    // Work on ARGB_8888 copy
+    val bmp = src.copy(Bitmap.Config.ARGB_8888, true)
+    val canvas = Canvas(bmp)
+    val paint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR)
+    }
+    // Circle radius as 36% of smaller dimension (tweak as needed)
+    val radius = (min(bmp.width, bmp.height) * 0.36f)
+    val cx = bmp.width / 2f
+    val cy = bmp.height / 2f
+    canvas.drawCircle(cx, cy, radius, paint)
+    paint.xfermode = null
+    return bmp
 }
 
 @Composable
