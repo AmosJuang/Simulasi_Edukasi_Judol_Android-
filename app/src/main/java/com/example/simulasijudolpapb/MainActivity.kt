@@ -159,7 +159,7 @@ class SimulatorViewModel : ViewModel() {
             )
             firestore.collection("spins").add(doc)
                 .addOnSuccessListener {
-                    // Successfully saved to Firestore
+
                 }
                 .addOnFailureListener { e ->
                     // Log error if needed
@@ -388,6 +388,9 @@ fun SimulatorScreen(vm: SimulatorViewModel, onBack: () -> Unit, onShowResult: ()
     var displaySymbols by remember { mutableStateOf(listOf("🍒", "🍒", "🍒")) }
     val coroutineScope = rememberCoroutineScope()
 
+    var lastWinAmount by remember { mutableStateOf(0) }
+    var showWinAnimation by remember { mutableStateOf(false) }
+
     // Update display symbols when VM symbols change
     LaunchedEffect(vm.currentSymbols) {
         if (!isSpinning) {
@@ -395,77 +398,96 @@ fun SimulatorScreen(vm: SimulatorViewModel, onBack: () -> Unit, onShowResult: ()
         }
     }
 
-    // Make the whole screen scrollable so users on small devices can reach the bottom
-    Column(modifier = Modifier
-        .fillMaxSize()
-        .padding(16.dp)
-        .verticalScroll(rememberScrollState()),
+    // Make the whole screen scrollable
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1A1A1A)) // Dark background like casino website
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text("Simulator", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            TextButton(onClick = onBack) { Text("Kembali") }
-        }
-        Text("Balance: ${vm.balance}", fontSize = 16.sp)
-        Text("House edge: ${(vm.houseEdge * 100).toInt()}%  • Prob menang (dasar): ${(vm.baseWinProb * 100).toInt()}%")
-        LinearProgressIndicator(progress = { animated.value }, modifier = Modifier.fillMaxWidth().height(8.dp))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = {
-                if (!isSpinning) {
-                    isSpinning = true
-                    coroutineScope.launch {
-                        // Animation phase
-                        repeat(15) {
-                            displaySymbols = List(3) { slotSymbols.random() }
-                            kotlinx.coroutines.delay(100)
-                        }
-                        // Actual spin
-                        vm.spin(10)
-                        // Show final result
-                        displaySymbols = vm.currentSymbols.map { slotSymbols[it] }
-                        isSpinning = false
-                    }
-                }
-            }) { Text("Spin (Bet 10)") }
-
-            Button(onClick = {
-                if (!isSpinning) {
-                    isSpinning = true
-                    coroutineScope.launch {
-                        // Animation phase
-                        repeat(15) {
-                            displaySymbols = List(3) { slotSymbols.random() }
-                            kotlinx.coroutines.delay(100)
-                        }
-                        // Actual spin
-                        vm.spin(50)
-                        // Show final result
-                        displaySymbols = vm.currentSymbols.map { slotSymbols[it] }
-                        isSpinning = false
-                    }
-                }
-            }) { Text("Spin (Bet 50)") }
-
-            Button(onClick = { vm.reset() }) { Text("Reset") }
-            Spacer(modifier = Modifier.weight(1f))
-            Button(onClick = onShowResult) { Text("Hasil Edukasi") }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(120.dp),
-            contentAlignment = Alignment.Center
+        // Header with back button
+        Row(
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Row(horizontalArrangement = Arrangement.Center) {
-                displaySymbols.forEach { symbol ->
+            Text(
+                "Simulasi Judol PAPB",
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 18.sp,
+                color = Color(0xFFFFD700) // Gold color
+            )
+            IconButton(onClick = onBack) {
+                Text("x", fontSize = 20.sp)
+            }
+        }
+
+        // Stats Row - like screenshot
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Balance Card
+            Card(
+                modifier = Modifier.weight(1f).padding(end = 4.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF2C2C2C)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(" SALDO ANDA", fontSize = 10.sp, color = Color(0xFFAAAAAA))
                     Text(
-                        text = symbol,
-                        fontSize = 64.sp,
-                        modifier = Modifier.padding(horizontal = 16.dp)
+                        "Rp ${vm.balance}",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (vm.balance < 1000) Color(0xFFFF5252) else Color(0xFF4CAF50)
+                    )
+                }
+            }
+
+            // Total Main Card
+            Card(
+                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF2C2C2C)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(" TOTAL MAIN", fontSize = 10.sp, color = Color(0xFFAAAAAA))
+                    Text(
+                        "${vm.history.size}",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF00BCD4)
+                    )
+                }
+            }
+
+            // Win Rate Card
+            Card(
+                modifier = Modifier.weight(1f).padding(start = 4.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF2C2C2C)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(" WIN RATE", fontSize = 10.sp, color = Color(0xFFAAAAAA))
+                    val winRate = if (vm.history.isNotEmpty()) {
+                        (vm.history.count { it.isWin }.toFloat() / vm.history.size * 100).toInt()
+                    } else 0
+                    Text(
+                        "$winRate%",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFFFD700)
                     )
                 }
             }
@@ -473,29 +495,332 @@ fun SimulatorScreen(vm: SimulatorViewModel, onBack: () -> Unit, onShowResult: ()
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        Text("Riwayat terbaru:", fontWeight = FontWeight.Medium)
-        if (history.isEmpty()) {
-            Text("Belum ada spin. Tekan Spin untuk mulai.")
-        } else {
-            LazyColumn(modifier = Modifier.fillMaxWidth().height(250.dp)) {
-                items(history.asReversed()) { s ->
-                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Spin #${s.id} • Bet ${s.bet} • Win ${s.win}")
-                                if (s.nearMiss) {
-                                    Text("⚠️ Near-miss: 2 simbol sama!", color = Color(0xFFF57C00))
-                                }
-                                if (s.isWin) {
-                                    Text("🎉 MENANG! 3 simbol sama!", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+        // Jackpot Banner - like MEGA SLOT in screenshot
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFF5252)),
+            shape = RoundedCornerShape(12.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    " MEGA SLOT ",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White
+                )
+                Text(
+                    "JACKPOT: Rp 1.000.000.000",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFFEB3B)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Warning Message
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF2C2C2C)),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Text(
+                " SLOT PALING GACOR HARI INI! Maxwin hingga 1000x! Jackpot Rp 1 Miliar!",
+                modifier = Modifier.padding(12.dp),
+                fontSize = 12.sp,
+                color = Color(0xFFFFD700),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Slot Machine Box - with golden border like screenshot
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(280.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),
+            shape = RoundedCornerShape(16.dp),
+            border = androidx.compose.foundation.BorderStroke(3.dp, Color(0xFFFFD700)) // Golden border
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    // Slot symbols in individual boxes
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        displaySymbols.forEach { symbol ->
+                            Card(
+                                modifier = Modifier
+                                    .size(90.dp)
+                                    .padding(4.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF2C2C2C)),
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFFFD700))
+                            ) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = symbol,
+                                        fontSize = 56.sp
+                                    )
                                 }
                             }
-                            Text(if (s.isWin) "+${s.win}" else "-${s.bet}", fontWeight = FontWeight.Bold, color = if (s.isWin) Color(0xFF2E7D32) else Color(0xFFD32F2F))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Win/Loss indicator
+                    if (history.isNotEmpty() && !isSpinning) {
+                        val lastResult = history.last()
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (lastResult.isWin) Color(0xFF4CAF50) else Color(0xFFFF5252)
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = if (lastResult.isWin) " MENANG +Rp ${lastResult.win}!" else " KALAH -Rp ${lastResult.bet}",
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+
+                // Spinning overlay
+                if (isSpinning) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0x88000000)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            " SPINNING... ",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFFD700)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Bet Buttons - styled like casino buttons
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Button(
+                onClick = {
+                    if (!isSpinning && vm.balance >= 10) {
+                        isSpinning = true
+                        coroutineScope.launch {
+                            // Fast spinning animation
+                            repeat(20) {
+                                displaySymbols = List(3) { slotSymbols.random() }
+                                kotlinx.coroutines.delay(80)
+                            }
+                            // Actual spin
+                            vm.spin(10)
+                            // Show final result
+                            displaySymbols = vm.currentSymbols.map { slotSymbols[it] }
+                            kotlinx.coroutines.delay(100)
+                            isSpinning = false
+                        }
+                    }
+                },
+                modifier = Modifier.weight(1f).height(56.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
+                shape = RoundedCornerShape(12.dp),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp),
+                enabled = !isSpinning && vm.balance >= 10
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(" SPIN", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("Bet Rp 10", fontSize = 10.sp)
+                }
+            }
+
+            Button(
+                onClick = {
+                    if (!isSpinning && vm.balance >= 50) {
+                        isSpinning = true
+                        coroutineScope.launch {
+                            repeat(20) {
+                                displaySymbols = List(3) { slotSymbols.random() }
+                                kotlinx.coroutines.delay(80)
+                            }
+                            vm.spin(50)
+                            displaySymbols = vm.currentSymbols.map { slotSymbols[it] }
+                            kotlinx.coroutines.delay(100)
+                            isSpinning = false
+                        }
+                    }
+                },
+                modifier = Modifier.weight(1f).height(56.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
+                shape = RoundedCornerShape(12.dp),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp),
+                enabled = !isSpinning && vm.balance >= 50
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("BIG SPIN", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("Bet Rp 50", fontSize = 10.sp)
+                }
+            }
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Button(
+                onClick = { vm.reset() },
+                modifier = Modifier.weight(1f).height(48.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF616161)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(" RESET", fontWeight = FontWeight.Bold)
+            }
+
+            Button(
+                onClick = onShowResult,
+                modifier = Modifier.weight(1f).height(48.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9C27B0)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(" ANALISIS", fontWeight = FontWeight.Bold)
+            }
+        }
+
+        // Progress Bar - House Edge Warning
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF2C2C2C)),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "Kerugian Total: Rp ${vm.totalLoss()}",
+                        fontSize = 12.sp,
+                        color = Color(0xFFFF5252),
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "${(lossPercent * 100).toInt()}%",
+                        fontSize = 12.sp,
+                        color = Color(0xFFFF5252),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                LinearProgressIndicator(
+                    progress = { animated.value },
+                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                    color = Color(0xFFFF5252),
+                    trackColor = Color(0xFF424242)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Recent History
+        Text(
+            " RIWAYAT TERAKHIR",
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp,
+            color = Color(0xFFFFD700)
+        )
+
+        if (history.isEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF2C2C2C)),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    "Belum ada spin. Tekan tombol SPIN untuk mulai!",
+                    modifier = Modifier.padding(16.dp),
+                    fontSize = 12.sp,
+                    color = Color(0xFFAAAAAA),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxWidth().height(200.dp)) {
+                items(history.asReversed().take(10)) { s ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (s.isWin) Color(0xFF1B5E20) else Color(0xFF2C2C2C)
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Spin #${s.id}",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                if (s.isWin) {
+                                    Text(
+                                        "🎉 MENANG! 3 simbol sama!",
+                                        fontSize = 10.sp,
+                                        color = Color(0xFF4CAF50)
+                                    )
+                                } else if (s.nearMiss) {
+                                    Text(
+                                        "⚠️ Near-miss! 2 simbol sama!",
+                                        fontSize = 10.sp,
+                                        color = Color(0xFFFF9800)
+                                    )
+                                }
+                            }
+                            Text(
+                                if (s.isWin) "+Rp ${s.win}" else "-Rp ${s.bet}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = if (s.isWin) Color(0xFF4CAF50) else Color(0xFFFF5252)
+                            )
                         }
                     }
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }
 
@@ -525,12 +850,12 @@ fun CameraScreen(vm: CameraViewModel, onBack: () -> Unit) {
                 } catch (_: Exception) {
                     overlayBmpWithHole = bmp
                 }
-                debugMessage = "✅ Twibbon loaded from drawable"
+                debugMessage = "Twibbon loaded from drawable"
             } else {
-                debugMessage = "⚠️ Twibbon resource not found: anti_judi_online"
+                debugMessage = " Twibbon resource not found: anti_judi_online"
             }
         } catch (e: Exception) {
-            debugMessage = "❌ Error loading twibbon: ${e.message}"
+            debugMessage = " Error loading twibbon: ${e.message}"
         }
     }
 
@@ -643,7 +968,7 @@ fun CameraScreen(vm: CameraViewModel, onBack: () -> Unit) {
                                     vm.setPhoto(photoBmp)
                                     vm.setComposite(combined)
                                     lastBitmap = combined
-                                    debugMessage = "✅ Photo captured + twibbon applied"
+                                    debugMessage = " Photo captured + twibbon applied"
                                     Toast.makeText(context, "Foto disimpan & twibbon diterapkan", Toast.LENGTH_SHORT).show()
                                 }
                             } else {
@@ -651,7 +976,7 @@ fun CameraScreen(vm: CameraViewModel, onBack: () -> Unit) {
                                     vm.setPhoto(photoBmp)
                                     vm.setComposite(null)
                                     lastBitmap = photoBmp
-                                    debugMessage = "📸 Photo captured (no overlay)"
+                                    debugMessage = " Photo captured (no overlay)"
                                 }
                             }
                         }
@@ -664,11 +989,11 @@ fun CameraScreen(vm: CameraViewModel, onBack: () -> Unit) {
                         }
                     })
                 } catch (e: Exception) {
-                    debugMessage = "❌ Error while capturing: ${e.message}"
+                    debugMessage = " Error while capturing: ${e.message}"
                 }
 
             }, modifier = Modifier.weight(1f)) {
-                Text("📸 Ambil Foto")
+                Text(" Ambil Foto")
             }
 
             Button(onClick = {
@@ -676,7 +1001,7 @@ fun CameraScreen(vm: CameraViewModel, onBack: () -> Unit) {
                 lastBitmap = null
                 debugMessage = ""
             }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))) {
-                Text("🗑️ Hapus")
+                Text("Hapus")
             }
         }
 
@@ -689,7 +1014,7 @@ fun CameraScreen(vm: CameraViewModel, onBack: () -> Unit) {
                         .fillMaxWidth()
                         .heightIn(max = 400.dp))
                     Surface(color = Color(0xCC000000), modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).clip(RoundedCornerShape(8.dp))) {
-                        Text(if (vm.lastComposite != null) "✅ Twibbon Applied" else "⚠️ No Twibbon", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(8.dp))
+                        Text(if (vm.lastComposite != null) " Twibbon Applied" else "⚠️ No Twibbon", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(8.dp))
                     }
                 }
             }
@@ -735,19 +1060,19 @@ fun CameraScreen(vm: CameraViewModel, onBack: () -> Unit) {
 // Helper: composite overlay centered and scaled onto photo
 // The overlay WITH HOLE will show the selfie photo through the transparent center
 fun compositeBitmap(photo: Bitmap, overlay: Bitmap): Bitmap {
-    // Create overlay with hole to replace the center image with selfie
-    val overlayWithHole = makeOverlayWithHole(overlay)
-
     val combined = Bitmap.createBitmap(photo.width, photo.height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(combined)
 
-    // Draw selfie photo first (background - will show through the hole)
+    // Draw selfie photo as background
     canvas.drawBitmap(photo, 0f, 0f, null)
 
-    // Scale overlay WITH HOLE to fit within photo (90% of width)
-    val scale = min(photo.width.toFloat() * 0.9f / overlayWithHole.width.toFloat(), photo.height.toFloat() * 0.9f / overlayWithHole.height.toFloat())
-    val newW = (overlayWithHole.width * scale).toInt().coerceAtLeast(1)
-    val newH = (overlayWithHole.height * scale).toInt().coerceAtLeast(1)
+    // Scale overlay to fit photo dimensions
+    val scale = min(photo.width.toFloat() / overlay.width.toFloat(), photo.height.toFloat() / overlay.height.toFloat())
+    val newW = (overlay.width * scale).toInt().coerceAtLeast(1)
+    val newH = (overlay.height * scale).toInt().coerceAtLeast(1)
+
+    // Create overlay with hole
+    val overlayWithHole = makeOverlayWithHole(overlay)
     val overlayScaled = Bitmap.createScaledBitmap(overlayWithHole, newW, newH, true)
 
     // Draw overlay with hole on top (centered) - selfie shows through the hole
@@ -760,19 +1085,24 @@ fun compositeBitmap(photo: Bitmap, overlay: Bitmap): Bitmap {
 
 // New helper: return overlay bitmap with transparent circular hole at center
 fun makeOverlayWithHole(src: Bitmap): Bitmap {
-    // Work on ARGB_8888 copy
+    // Create a mutable ARGB_8888 copy
     val bmp = src.copy(Bitmap.Config.ARGB_8888, true)
     val canvas = Canvas(bmp)
+
+    // Create paint with CLEAR mode to punch a hole
     val paint = android.graphics.Paint().apply {
         isAntiAlias = true
         xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR)
     }
-    // Circle radius as 36% of smaller dimension (tweak as needed)
-    val radius = (min(bmp.width, bmp.height) * 0.36f)
+
+    // Calculate circle position and radius (adjust percentage as needed)
     val cx = bmp.width / 2f
     val cy = bmp.height / 2f
+    val radius = min(bmp.width, bmp.height) * 0.28f // Reduced from 0.36f to make hole smaller
+
+    // Draw circle to create transparent hole
     canvas.drawCircle(cx, cy, radius, paint)
-    paint.xfermode = null
+
     return bmp
 }
 
@@ -843,13 +1173,13 @@ fun LocationScreen(vm: LocationViewModel, onBack: () -> Unit) {
         when (isProvinceRisk) {
             true -> Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE))) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text("⚠️ PROVINSI: ${provinceName ?: "Tidak diketahui"}", color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold)
+                    Text(" PROVINSI: ${provinceName ?: "Tidak diketahui"}", color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold)
                     Text("Berdasarkan data provinsi tetap aplikasi, provinsi ini DINYATAKAN SEBAGAI ZONA RISIKO.")
                 }
             }
             false -> Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text("✅ PROVINSI: ${provinceName ?: "Tidak diketahui"}", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                    Text("PROVINSI: ${provinceName ?: "Tidak diketahui"}", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
                     Text("Berdasarkan data provinsi tetap aplikasi, provinsi ini DINYATAKAN AMAN (non-risk).")
                 }
             }
@@ -868,7 +1198,7 @@ fun LocationScreen(vm: LocationViewModel, onBack: () -> Unit) {
                 }
                 context.startActivity(Intent.createChooser(send, "Bagikan status provinsi"))
             }, modifier = Modifier.fillMaxWidth()) {
-                Text("📤 Bagikan Status Provinsi")
+                Text(" Bagikan Status Provinsi")
             }
         }
 
@@ -876,7 +1206,7 @@ fun LocationScreen(vm: LocationViewModel, onBack: () -> Unit) {
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("📍 Zona Risiko Terdaftar:", fontWeight = FontWeight.Bold)
+                Text(" Zona Risiko Terdaftar:", fontWeight = FontWeight.Bold)
                 vm.riskZones.forEach { (_, _, name) ->
                     Text("• $name", fontSize = 12.sp)
                 }
@@ -911,7 +1241,7 @@ fun EducationScreen(onBack: () -> Unit) {
                 color = Color(0xFFD32F2F)
             )
             IconButton(onClick = onBack) {
-                Text("❌", fontSize = 20.sp)
+                Text("", fontSize = 20.sp)
             }
         }
 
@@ -1511,7 +1841,7 @@ fun ResultScreen(vm: SimulatorViewModel, onBack: () -> Unit, onShare: (String) -
                         "${vm.history.size}",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF424242)
+                        color = Color(0xFF00BCD4)
                     )
                 }
 
